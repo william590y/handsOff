@@ -187,25 +187,22 @@ function onResults(results) {
   // the Three.js renderer (full-screen) renders the wheel. Clear overlay.
   overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
-  // Auto-detect mirror mode once using MediaPipe handedness if the user
-  // hasn't manually chosen. We check whether a detected LEFT hand appears
-  // on the left side of the image; if it appears on the right then the
-  // displayed video is mirrored and we need to flip landmark mapping.
-  if (!autoMirrorChecked && results.multiHandedness && results.multiHandedness.length > 0) {
-    try {
-      for (let i = 0; i < results.multiHandedness.length; i++) {
-        const label = results.multiHandedness[i].label || results.multiHandedness[i].classification?.[0]?.label;
-        const lm = results.multiHandLandmarks[i];
-        if (label && lm) {
-          const avgX = lm.reduce((s, p) => s + p.x, 0) / lm.length;
-          // if label == 'Left' but average X is >0.5, the image is mirrored
-          if (label.toLowerCase().startsWith('left') && avgX > 0.5) { mirrorVideo = true; }
-          if (label.toLowerCase().startsWith('right') && avgX < 0.5) { mirrorVideo = true; }
-        }
+  // Use MediaPipe's handedness labels (if present) to determine which
+  // landmark set corresponds to the left and right hands. This avoids
+  // relying on a heuristic based on landmark positions.
+  // We'll map labels (case-insensitive) to choose the left/right palm centers.
+  let leftLandmarks = null;
+  let rightLandmarks = null;
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+      const lm = results.multiHandLandmarks[i];
+      const label = results.multiHandedness?.[i]?.label || results.multiHandedness?.[i]?.classification?.[0]?.label || null;
+      if (label) {
+        const l = label.toLowerCase();
+        if (l.startsWith('left')) leftLandmarks = lm;
+        if (l.startsWith('right')) rightLandmarks = lm;
       }
-    } catch (e) {}
-    autoMirrorChecked = true;
-    drawStatus('Auto mirror set to ' + mirrorVideo);
+    }
   }
 
   if (!results.multiHandLandmarks || results.multiHandLandmarks.length < 2) {
@@ -213,9 +210,16 @@ function onResults(results) {
     return;
   }
 
-  // compute palm centers for first two hands
-  const p0 = computePalmCenter(results.multiHandLandmarks[0]);
-  const p1 = computePalmCenter(results.multiHandLandmarks[1]);
+  // compute palm centers for first two hands; prefer MediaPipe's left/right labels
+  let pLeft, pRight;
+  if (leftLandmarks && rightLandmarks) {
+    pLeft = computePalmCenter(leftLandmarks);
+    pRight = computePalmCenter(rightLandmarks);
+  } else {
+    // fallback: use the first two detected hands in order
+    pLeft = computePalmCenter(results.multiHandLandmarks[0]);
+    pRight = computePalmCenter(results.multiHandLandmarks[1]);
+  }
 
   // convert normalized to pixels. If we draw the video unflipped we must mirror
   // the normalized X coordinate so overlays align with the displayed image.
@@ -226,8 +230,9 @@ function onResults(results) {
     // coordinates to pixel space directly.
     return { x: pt.x * overlay.width, y: pt.y * overlay.height };
   }
-  const a = normToPx(p0);
-  const b = normToPx(p1);
+  // We'll render left hand as 'a' (red) and right as 'b' (blue)
+  const a = normToPx(pLeft);
+  const b = normToPx(pRight);
 
   // draw markers
   overlayCtx.fillStyle = 'red';
@@ -278,36 +283,38 @@ function onResults(results) {
 
     // Scale the wheel so it fits within the circle through the palm centers.
     try {
-      const desiredPixelRadius = Math.max(10, r / 2); // at least 10px
+  // Desired diameter should be 3/4 of the on-screen line length => radius = (r * 3/4)/2 = r * 3/8
+  const desiredPixelRadius = Math.max(5, (r * 3 / 8)); // at least 5px
 
       // compute world-space center and an edge point in the wheel's right direction
-      const centerWorld = new THREE.Vector3();
-      wheel.getWorldPosition(centerWorld);
+        // We'll compute a scale that makes the wheel occupy 'desiredPixelRadius' on screen
+        // but ignore depth (z). To do this we estimate pixels-per-world-unit at a unit
+        // depth using the camera FOV and renderer height, then compute the scale that
+        // results in the desired pixel radius for the model's intrinsic radius.
+    // Use bounding sphere to get a stable object-space radius
+    const bbox = new THREE.Box3().setFromObject(wheel);
+    const sphere = bbox.getBoundingSphere(new THREE.Sphere());
+    const modelRadiusCurrent = sphere.radius || 0.5;
+    const currentScale = (wheel.scale && wheel.scale.x) ? wheel.scale.x : 1;
+    // model radius at scale = 1 (object-space radius)
+    const modelRadiusAtScale1 = modelRadiusCurrent / currentScale || 1e-6;
 
-      // estimate model radius in world units using bounding box
-      const bbox = new THREE.Box3().setFromObject(wheel);
-      const size = bbox.getSize(new THREE.Vector3());
-      const modelRadiusWorld = Math.max(size.x, size.y, size.z) / 2;
+        // pixels per world unit assuming a canonical depth of 1. This deliberately
+        // ignores the actual object depth so the resulting scale is driven only by
+        // the 2D pixel target (desiredPixelRadius).
+        const fovRad = (camera.fov || 50) * Math.PI / 180.0;
+        const pxPerWorldUnitAtZ1 = (renderer.domElement.clientHeight || window.innerHeight) / (2 * Math.tan(fovRad / 2));
 
-      // fallback if modelRadiusWorld is zero
-      const eps = 1e-4;
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(wheel.quaternion).normalize();
-      const edgeWorld = centerWorld.clone().add(right.clone().multiplyScalar(modelRadiusWorld || 0.5));
-
-      const cN = centerWorld.clone().project(camera);
-      const eN = edgeWorld.clone().project(camera);
-      const pixelDist = Math.abs((eN.x - cN.x) * (renderer.domElement.clientWidth / 2));
-
-      let scaleFactor = 1;
-      if (pixelDist > eps) {
-        scaleFactor = (desiredPixelRadius / pixelDist) * 0.9; // a little padding
-      }
-      // clamp to reasonable range
-      scaleFactor = Math.min(Math.max(scaleFactor, 0.25), 4.0);
-
-      const targetScale = wheel.scale.clone().multiplyScalar(scaleFactor);
-      // smooth scale
-      wheel.scale.lerp(targetScale, 0.25);
+        let targetScale = 1;
+        if (modelRadiusAtScale1 > 1e-8 && pxPerWorldUnitAtZ1 > 1e-8) {
+          // scale that maps the model's radius (at scale=1) to desiredPixelRadius
+          targetScale = (desiredPixelRadius) / (modelRadiusAtScale1 * pxPerWorldUnitAtZ1);
+        }
+    // clamp only the minimum to prevent degenerate tiny scales; allow large sizes
+    targetScale = Math.max(targetScale, 0.05);
+        // smooth towards target more responsively so changes are visible
+        const desiredScaleVec = new THREE.Vector3(targetScale, targetScale, targetScale);
+        wheel.scale.lerp(desiredScaleVec, 0.75);
     } catch (e) { console.warn('scale adjust error', e); }
   }
 
