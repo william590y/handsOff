@@ -146,14 +146,32 @@ function setupCharts() {
 
   chartR = new Chart(ctxR, {
     type: 'line',
-    data: { labels: [], datasets: [{ label: 'r (px)', data: [], borderColor: 'orange', tension: 0.2 }] },
-    options: { animation: false, normalized: true, plugins: { legend: { display: true } }, scales: { x: { display: false } } }
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'r (px)', data: [], borderColor: 'orange', backgroundColor: 'rgba(255,165,0,0.1)', tension: 0.2, yAxisID: 'y_r' },
+        { label: 'theta (rad)', data: [], borderColor: 'limegreen', backgroundColor: 'rgba(50,205,50,0.05)', tension: 0.2, yAxisID: 'y_theta' }
+      ]
+    },
+    options: {
+      animation: false,
+      normalized: true,
+      plugins: {
+        legend: { display: true, labels: { color: '#fff' } },
+        title: { display: true, text: 'r and theta', color: '#000' }
+      },
+      scales: {
+        x: { display: false },
+        y_r: { type: 'linear', position: 'left', title: { display: true, text: 'r (px)', color: '#fff' }, ticks: { color: '#fff' } },
+        y_theta: { type: 'linear', position: 'right', title: { display: true, text: 'theta (rad)', color: '#fff' }, ticks: { color: '#fff', callback: v => v.toFixed(2) }, min: -Math.PI, max: Math.PI }
+      }
+    }
   });
 
   chartTheta = new Chart(ctxT, {
     type: 'line',
-    data: { labels: [], datasets: [{ label: 'theta (deg)', data: [], borderColor: 'cyan', tension: 0.2 }] },
-    options: { animation: false, normalized: true, plugins: { legend: { display: true } }, scales: { x: { display: false } } }
+    data: { labels: [], datasets: [{ label: 'theta (rad)', data: [], borderColor: 'cyan', tension: 0.2 }] },
+    options: { animation: false, normalized: true, plugins: { legend: { display: true, labels: { color: '#fff' } }, title: { display: true, text: 'theta', color: '#000' } }, scales: { x: { display: false }, y: { min: -Math.PI, max: Math.PI, ticks: { color: '#fff' } } } }
   });
 }
 
@@ -161,12 +179,16 @@ function pushPoint(r, thetaDeg) {
   if (rData.length >= maxHistory) { rData.shift(); thetaData.shift(); }
   rData.push(r); thetaData.push(thetaDeg);
 
+  // push into combined chart (chartR) and separate theta-only chart
   chartR.data.labels = rData.map((_, i) => i);
   chartR.data.datasets[0].data = rData;
+  // thetaData stores degrees in previous code; convert to radians for chart
+  const thetaRad = thetaData.map(d => d * Math.PI / 180);
+  chartR.data.datasets[1].data = thetaRad;
   chartR.update('none');
 
-  chartTheta.data.labels = thetaData.map((_, i) => i);
-  chartTheta.data.datasets[0].data = thetaData;
+  chartTheta.data.labels = thetaRad.map((_, i) => i);
+  chartTheta.data.datasets[0].data = thetaRad;
   chartTheta.update('none');
 }
 
