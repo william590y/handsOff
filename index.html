@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Hands-Off Steering Wheel Demo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+  <div id="debug" aria-live="polite"></div>
+      <div id="flip-control">
+        <button id="mirrorOn">Mirror</button>
+        <button id="mirrorOff">Unmirror</button>
+      </div>
+      <video id="video" autoplay playsinline></video>
+      <canvas id="overlay"></canvas>
+      <div id="ui">
+        <div id="three-container"></div>
+        <div id="charts">
+          <canvas id="chart-r"></canvas>
+          <canvas id="chart-theta"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Libraries from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+    <script src="script.js"></script>
+  </body>
+</html>

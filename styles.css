@@ -1,0 +1,17 @@
+html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,Roboto,Arial}
+#app{position:relative;background:#111;color:#eee;height:100vh;overflow:hidden}
+/* small debug panel visible even if canvas is broken */
+#debug{position:absolute;left:12px;top:12px;background:rgba(0,0,0,0.6);color:#fff;padding:8px 10px;border-radius:6px;z-index:3;font-size:13px}
+/* flip control */
+#flip-control{position:absolute;left:12px;top:58px;z-index:3}
+#flip-control button{padding:6px 10px;border-radius:6px;border:0;background:#2b2f33;color:#fff;margin-right:6px}
+video#video{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;z-index:0}
+#three-renderer{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:2}
+canvas#overlay{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:3}
+#ui{position:absolute;right:10px;bottom:10px;width:420px;height:360px;display:flex;flex-direction:column;gap:8px;z-index:4}
+#three-container{flex:1;background:rgba(0,0,0,0.45);border-radius:6px;overflow:hidden;z-index:5;}
+#charts{height:180px;display:flex;flex-direction:column;gap:6px}
+#charts canvas{background:rgba(0,0,0,0.45);border-radius:4px}
+
+/* ensure 3d canvas fits container */
+#three-container canvas{width:100% !important;height:100% !important}
