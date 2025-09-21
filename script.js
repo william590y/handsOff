@@ -10,6 +10,10 @@ let scene, camera, renderer, wheel;
 let hands;
 let mpCanvas, mpCtx; // offscreen canvas used to feed mirrored frames to MediaPipe
 let chartR, chartTheta;
+// voice keyword detection ("toggle")
+let toggleCount = 0;
+let toggleBannerEl, toggleCountEl, startVoiceBtn;
+let sr, srActive = false, srAutoTried = false;
 // mirrorVideo: when true the video is mirrored (like many webcam previews).
 // When false the video shows natural camera orientation. We'll keep overlays
 // and landmark conversions consistent with this toggle.
@@ -364,6 +368,13 @@ async function init() {
   setupThree();
   setupCharts();
   drawStatus('Initializing...');
+  // wire toggle UI refs
+  toggleBannerEl = document.getElementById('toggle-banner');
+  toggleCountEl = document.getElementById('toggle-count');
+  startVoiceBtn = document.getElementById('start-voice');
+  if (startVoiceBtn) startVoiceBtn.addEventListener('click', () => startToggleRecognition(true));
+  // try to auto-start speech recognition (may require user gesture in some browsers)
+  startToggleRecognition(false);
   // wire flip button
   try {
     const on = document.getElementById('mirrorOn');
@@ -499,3 +510,75 @@ window.addEventListener('unhandledrejection', (ev) => {
 });
 
 init();
+
+// ---------------- Voice "toggle" keyword detection -----------------
+function startToggleRecognition(fromClick) {
+  if (srActive) return;
+  // Web Speech API (SpeechRecognition) support check
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    // If not supported, show a start button for possible alt implementations later
+    if (startVoiceBtn) startVoiceBtn.style.display = 'none';
+    console.warn('SpeechRecognition not supported in this browser');
+    return;
+  }
+  try {
+    sr = new SpeechRecognition();
+    sr.lang = 'en-US';
+    sr.continuous = true;
+    sr.interimResults = true; // get quicker partials
+    sr.maxAlternatives = 1;
+    sr.onresult = (ev) => {
+      // scan the latest result(s) for the word "toggle"
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const res = ev.results[i];
+        const transcript = (res[0]?.transcript || '').toLowerCase();
+        // basic normalization: trim punctuation and collapse whitespace
+        const text = transcript.replace(/[.,!?]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!text) continue;
+        // detect 'toggle' as a whole word
+        if (/\btoggle\b/.test(text)) {
+          // Only count when a phrase is final to avoid double counts on interim
+          if (res.isFinal) onToggleDetected();
+        }
+      }
+    };
+    sr.onerror = (e) => {
+      console.warn('SpeechRecognition error', e.error);
+      if (!fromClick && !srAutoTried && startVoiceBtn) {
+        // show manual start if auto failed silently due to permissions or policy
+        startVoiceBtn.style.display = 'inline-block';
+      }
+    };
+    sr.onend = () => {
+      srActive = false;
+      // attempt to restart to keep it alive unless it was a manual stop (not implemented here)
+      // avoid tight loops if permissions are denied
+      if (sr && (document.visibilityState === 'visible')) {
+        try { sr.start(); srActive = true; } catch (e) {}
+      }
+    };
+    sr.start(); srActive = true; srAutoTried = true;
+    if (startVoiceBtn) startVoiceBtn.style.display = 'none';
+  } catch (e) {
+    console.warn('Unable to start SpeechRecognition', e);
+    if (fromClick) {
+      // give up silently on manual attempts
+    } else if (startVoiceBtn) {
+      startVoiceBtn.style.display = 'inline-block';
+    }
+  }
+}
+
+function onToggleDetected() {
+  toggleCount += 1;
+  if (toggleCountEl) toggleCountEl.textContent = String(toggleCount);
+  flashToggleBanner('Toggle detected');
+}
+
+function flashToggleBanner(text) {
+  if (!toggleBannerEl) return;
+  toggleBannerEl.textContent = text || 'Toggle detected';
+  toggleBannerEl.style.display = 'block';
+  setTimeout(() => { if (toggleBannerEl) toggleBannerEl.style.display = 'none'; }, 700);
+}

@@ -15,12 +15,18 @@
       </div>
       <video id="video" autoplay playsinline></video>
       <canvas id="overlay"></canvas>
+      <div id="toggle-banner" aria-live="polite"></div>
       <div id="ui">
-        <div id="three-container"></div>
         <div id="charts">
           <canvas id="chart-r"></canvas>
           <canvas id="chart-theta"></canvas>
+          <div id="toggle-panel">
+            <strong>Toggle Count:</strong>
+            <span id="toggle-count">0</span>
+            <button id="start-voice" style="display:none;margin-left:8px;">Start Voice</button>
+          </div>
         </div>
+        <div id="three-container"></div>
       </div>
     </div>
 
