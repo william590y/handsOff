@@ -9,7 +9,10 @@ const threeContainer = document.getElementById('three-container');
 let scene, camera, renderer, wheel;
 let hands;
 let mpCanvas, mpCtx; // offscreen canvas used to feed mirrored frames to MediaPipe
-let chartR, chartTheta;
+let chartR, chartThumbs;
+let thumbsCount = 0;
+let lastDoubleThumbs = false;
+let thumbsCooldown = 0; // frames to avoid double counting
 // mirrorVideo: when true the video is mirrored (like many webcam previews).
 // When false the video shows natural camera orientation. We'll keep overlays
 // and landmark conversions consistent with this toggle.
@@ -141,8 +144,14 @@ function animate() {
 }
 
 function setupCharts() {
+  const ctxThumbs = document.getElementById('chart-thumbs').getContext('2d');
   const ctxR = document.getElementById('chart-r').getContext('2d');
-  const ctxT = document.getElementById('chart-theta').getContext('2d');
+
+  chartThumbs = new Chart(ctxThumbs, {
+    type: 'line',
+    data: { labels: [], datasets: [{ label: 'Thumbs Up Count', data: [], borderColor: 'gold', backgroundColor:'rgba(255,215,0,0.1)', tension:0.1 }] },
+    options: { animation:false, normalized:true, plugins:{ legend:{display:true, labels:{color:'#fff'}}, title:{display:true, text:'Double Thumbs-Up Count', color:'#000'} }, scales:{ x:{display:false}, y:{ beginAtZero:true, ticks:{color:'#fff'} } } }
+  });
 
   chartR = new Chart(ctxR, {
     type: 'line',
@@ -168,11 +177,7 @@ function setupCharts() {
     }
   });
 
-  chartTheta = new Chart(ctxT, {
-    type: 'line',
-    data: { labels: [], datasets: [{ label: 'theta (rad)', data: [], borderColor: 'cyan', tension: 0.2 }] },
-    options: { animation: false, normalized: true, plugins: { legend: { display: true, labels: { color: '#fff' } }, title: { display: true, text: 'theta', color: '#000' } }, scales: { x: { display: false }, y: { min: -Math.PI, max: Math.PI, ticks: { color: '#fff' } } } }
-  });
+  // removed redundant theta-only chart
 }
 
 function pushPoint(r, thetaDeg) {
@@ -187,9 +192,7 @@ function pushPoint(r, thetaDeg) {
   chartR.data.datasets[1].data = thetaRad;
   chartR.update('none');
 
-  chartTheta.data.labels = thetaRad.map((_, i) => i);
-  chartTheta.data.datasets[0].data = thetaRad;
-  chartTheta.update('none');
+  // theta-only chart removed
 }
 
 function computePalmCenter(landmarks) {
@@ -273,6 +276,59 @@ function onResults(results) {
   // draw vector
   overlayCtx.strokeStyle = 'lime'; overlayCtx.lineWidth = 4;
   overlayCtx.beginPath(); overlayCtx.moveTo(a.x, a.y); overlayCtx.lineTo(b.x, b.y); overlayCtx.stroke();
+
+  // ---- Double thumbs-up detection ----
+  // Heuristic: For each hand, thumb is up if:
+  // 1) Thumb tip (4) is above thumb MCP (2) relative to the wrist direction (y lower);
+  // 2) Fingers 2-5 are curled (tip is closer to wrist than MCP), implying fist closed.
+  // We'll use normalized coordinates supplied by MediaPipe (0..1).
+  const lmLeft = leftLandmarks || results.multiHandLandmarks[0];
+  const lmRight = rightLandmarks || results.multiHandLandmarks[1];
+
+  function isFistClosedAndThumbUp(lm) {
+    const wrist = lm[0];
+    const thumbTip = lm[4];
+    const thumbMcp = lm[2];
+    // thumb up if tip higher (smaller y) than MCP
+    const thumbUp = (thumbTip.y + 0.01) < thumbMcp.y;
+    // fingers curled: for each finger (index=8/5, middle=12/9, ring=16/13, pinky=20/17),
+    // tip should be closer to wrist than MCP? Simpler: tip y > MCP y (tip lower) when fist is closed (towards camera can vary),
+    // use distance to wrist for robustness.
+    function curled(tipIdx, mcpIdx){
+      const tip = lm[tipIdx];
+      const mcp = lm[mcpIdx];
+      const dTip = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
+      const dMcp = Math.hypot(mcp.x - wrist.x, mcp.y - wrist.y);
+      return dTip < dMcp * 0.85; // tip closer to wrist than MCP by margin
+    }
+    const fingersCurled = curled(8,5) && curled(12,9) && curled(16,13) && curled(20,17);
+    return thumbUp && fingersCurled;
+  }
+
+  const leftOK = isFistClosedAndThumbUp(lmLeft);
+  const rightOK = isFistClosedAndThumbUp(lmRight);
+  let doubleThumbsNow = leftOK && rightOK;
+  if (thumbsCooldown > 0) thumbsCooldown--;
+  if (doubleThumbsNow && !lastDoubleThumbs && thumbsCooldown === 0) {
+    thumbsCount++;
+    thumbsCooldown = 15; // debounce ~0.25s @60fps
+    // update banner
+    const g = document.getElementById('gesture');
+    if (g) {
+      g.textContent = 'Thumbs up detected! (' + thumbsCount + ')';
+      g.style.display = 'block';
+      setTimeout(() => { g.style.display = 'none'; }, 800);
+    }
+    // update thumbs chart
+    if (chartThumbs) {
+      const labels = chartThumbs.data.labels;
+      labels.push(labels.length);
+      chartThumbs.data.datasets[0].data.push(thumbsCount);
+      if (labels.length > maxHistory) { labels.shift(); chartThumbs.data.datasets[0].data.shift(); }
+      chartThumbs.update('none');
+    }
+  }
+  lastDoubleThumbs = doubleThumbsNow;
 
   // update 3D model: position at midpoint, rotation to match angle, scale with r
   if (wheel) {

@@ -9,6 +9,7 @@
   <body>
     <div id="app">
   <div id="debug" aria-live="polite"></div>
+  <div id="gesture" aria-live="polite"></div>
       <div id="flip-control">
         <button id="mirrorOn">Mirror</button>
         <button id="mirrorOff">Unmirror</button>
@@ -16,11 +17,11 @@
       <video id="video" autoplay playsinline></video>
       <canvas id="overlay"></canvas>
       <div id="ui">
-        <div id="three-container"></div>
         <div id="charts">
+          <canvas id="chart-thumbs"></canvas>
           <canvas id="chart-r"></canvas>
-          <canvas id="chart-theta"></canvas>
         </div>
+        <div id="three-container"></div>
       </div>
     </div>
 
